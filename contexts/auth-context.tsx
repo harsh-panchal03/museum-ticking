@@ -1,140 +1,183 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import type React from "react"
+import { createContext, useContext, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { api, getAuthToken } from "@/utils/api"
 
-// Define user type
 type User = {
   id: string
   name: string
   email: string
-  role: "user" | "admin"
 }
 
-// Define auth context type
 type AuthContextType = {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>
+  login: (email: string, password: string, remember?: boolean) => Promise<void>
+  register: (userData: any) => Promise<void>
   logout: () => void
+  clearError: () => void
 }
 
-// Create the auth context
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Auth provider props
-type AuthProviderProps = {
-  children: ReactNode
-}
+// Token expiration time in milliseconds (30 days)
+const TOKEN_EXPIRATION = 30 * 24 * 60 * 60 * 1000
 
-export function AuthProvider({ children }: AuthProviderProps) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isInitialized, setIsInitialized] = useState<boolean>(false)
   const router = useRouter()
 
-  // Check if user is already logged in on mount
+  const clearError = () => setError(null)
+
+  // Check if user is already logged in
   useEffect(() => {
     const checkAuth = async () => {
-      try {
-        const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
+      const token = getAuthToken()
 
-        if (token) {
-          // For demo purposes, we'll just set a mock user
-          // In a real app, you would validate the token with your API
-          setUser({
-            id: "1",
-            name: "John Doe",
-            email: "john@example.com",
-            role: "user",
-          })
+      if (!token) {
+        setIsLoading(false)
+        return
+      }
+
+      try {
+        // Check if token is expired
+        const tokenData = JSON.parse(atob(token.split(".")[1]))
+        if (tokenData.exp && Date.now() >= tokenData.exp * 1000) {
+          throw new Error("Token expired")
         }
-      } catch (error) {
-        console.error("Auth initialization error:", error)
+
+        const { user } = await api.auth.me()
+        setUser(user)
+      } catch (err) {
+        console.error("Auth check failed:", err)
+        // Clear invalid tokens
+        localStorage.removeItem("auth_token")
+        sessionStorage.removeItem("auth_token")
+
+        // Redirect to login with session expired parameter
+        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+          router.push("/login?sessionExpired=true")
+        }
       } finally {
-        setIsInitialized(true)
+        setIsLoading(false)
       }
     }
 
     checkAuth()
-  }, [])
+  }, [router])
 
-  // Login function
-  const login = async (email: string, password: string, rememberMe = false) => {
+  const login = async (email: string, password: string, remember = false) => {
     setIsLoading(true)
     setError(null)
 
     try {
-      // In a real app, you would call your API endpoint here
-      // const response = await fetch("https://api.example.com/login", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({ email, password }),
-      // })
+      // For demo purposes, accept a simple login
+      if (email === "demo@example.com" && password === "password") {
+        const demoUser = {
+          id: "user_1",
+          name: "Demo User",
+          email: "demo@example.com",
+        }
 
-      // Mock successful login for demo purposes
-      // In a real app, you would check if the response is successful
-      // if (!response.ok) throw new Error("Invalid credentials")
+        // Create a simple JWT-like token with expiration
+        const now = Date.now()
+        const exp = now + TOKEN_EXPIRATION
+        const tokenPayload = {
+          sub: demoUser.id,
+          name: demoUser.name,
+          email: demoUser.email,
+          iat: Math.floor(now / 1000),
+          exp: Math.floor(exp / 1000),
+        }
 
-      // const data = await response.json()
+        const tokenHeader = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }))
+        const tokenBody = btoa(JSON.stringify(tokenPayload))
+        const tokenSignature = btoa("signature") // In a real app, this would be a proper signature
 
-      // Mock token and user data
-      const mockToken = "mock_jwt_token_" + Math.random().toString(36).substring(2)
-      const mockUser = {
-        id: "1",
-        name: email.split("@")[0],
-        email,
-        role: email.includes("admin") ? "admin" : ("user" as "user" | "admin"),
-      }
+        const token = `${tokenHeader}.${tokenBody}.${tokenSignature}`
 
-      // Store token in localStorage or sessionStorage based on rememberMe
-      if (rememberMe) {
-        localStorage.setItem("auth_token", mockToken)
-      } else {
-        sessionStorage.setItem("auth_token", mockToken)
-      }
+        // Store token based on remember preference
+        if (remember) {
+          localStorage.setItem("auth_token", token)
+        } else {
+          sessionStorage.setItem("auth_token", token)
+        }
 
-      setUser(mockUser)
-
-      // Redirect based on user role
-      if (mockUser.role === "admin") {
-        router.push("/admin/dashboard")
-      } else {
+        setUser(demoUser)
         router.push("/dashboard")
+        return
       }
+
+      const { token, user } = await api.auth.login(email, password)
+
+      // Store token based on remember preference
+      if (remember) {
+        localStorage.setItem("auth_token", token)
+      } else {
+        sessionStorage.setItem("auth_token", token)
+      }
+
+      setUser(user)
+      router.push("/dashboard")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred during login")
+      console.error("Login failed:", err)
+      setError(err instanceof Error ? err.message : "Login failed. Please check your credentials.")
     } finally {
       setIsLoading(false)
     }
   }
 
-  // Logout function
+  const register = async (userData: any) => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const { token, user } = await api.auth.register(userData)
+
+      // Store token in session storage by default for new registrations
+      sessionStorage.setItem("auth_token", token)
+
+      setUser(user)
+      router.push("/dashboard")
+    } catch (err) {
+      console.error("Registration failed:", err)
+      setError(err instanceof Error ? err.message : "Registration failed. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const logout = () => {
     localStorage.removeItem("auth_token")
     sessionStorage.removeItem("auth_token")
     setUser(null)
-    router.push("/")
+    router.push("/login")
   }
 
-  // Auth context value
-  const value = {
-    user,
-    isAuthenticated: !!user,
-    isLoading,
-    error,
-    login,
-    logout,
-  }
-
-  // Show loading or children
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        error,
+        login,
+        register,
+        logout,
+        clearError,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-// Custom hook to use auth context
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {

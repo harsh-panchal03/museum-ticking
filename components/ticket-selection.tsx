@@ -1,129 +1,242 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
-import type { Museum } from "@/lib/data"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { CalendarIcon } from "lucide-react"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { format } from "date-fns"
-import { cn } from "@/lib/utils"
+import { Separator } from "@/components/ui/separator"
+import { Clock, Info, Minus, Plus } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { RazorpayPayment } from "./razorpay-payment"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
 interface TicketSelectionProps {
-  museum: Museum
+  museum: {
+    id: string
+    name: string
+    ticketPrice: number
+    hours?: string
+  }
 }
 
-export default function TicketSelection({ museum }: TicketSelectionProps) {
+export function TicketSelection({ museum }: TicketSelectionProps) {
+  const [adultCount, setAdultCount] = useState(1)
+  const [childCount, setChildCount] = useState(0)
+  const [date, setDate] = useState<string>(getTomorrowDate())
+  const [showPayment, setShowPayment] = useState(false)
   const router = useRouter()
-  const [date, setDate] = useState<Date | undefined>(undefined)
-  const [tickets, setTickets] = useState<Record<string, number>>({})
-  const [isProcessing, setIsProcessing] = useState(false)
 
-  const handleQuantityChange = (ticketId: string, quantity: number) => {
-    setTickets((prev) => ({
-      ...prev,
-      [ticketId]: Math.max(0, quantity),
-    }))
+  const adultPrice = museum.ticketPrice
+  const childPrice = museum.ticketPrice * 0.5
+
+  const totalAdultPrice = adultCount * adultPrice
+  const totalChildPrice = childCount * childPrice
+  const totalPrice = totalAdultPrice + totalChildPrice
+
+  function getTomorrowDate() {
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    return tomorrow.toISOString().split("T")[0]
   }
 
-  const calculateTotal = () => {
-    return museum.ticketTypes.reduce((total, ticket) => {
-      return total + (tickets[ticket.id] || 0) * ticket.price
-    }, 0)
+  const handleIncrement = (type: "adult" | "child") => {
+    if (type === "adult") {
+      setAdultCount((prev) => Math.min(prev + 1, 10))
+    } else {
+      setChildCount((prev) => Math.min(prev + 1, 10))
+    }
   }
 
-  const handleProceedToCheckout = () => {
-    setIsProcessing(true)
-
-    // Simulate processing and redirect
-    setTimeout(() => {
-      router.push(`/checkout?museum=${museum.id}&date=${date?.toISOString()}&tickets=${JSON.stringify(tickets)}`)
-    }, 1000)
+  const handleDecrement = (type: "adult" | "child") => {
+    if (type === "adult") {
+      setAdultCount((prev) => Math.max(prev - 1, 1))
+    } else {
+      setChildCount((prev) => Math.max(prev - 1, 0))
+    }
   }
 
-  const hasSelectedTickets = Object.values(tickets).some((quantity) => quantity > 0)
-  const isDateSelected = !!date
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDate(e.target.value)
+  }
+
+  const handleBookNow = () => {
+    setShowPayment(true)
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Label htmlFor="visit-date">Select Visit Date</Label>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              id="visit-date"
-              variant="outline"
-              className={cn("w-full justify-start text-left font-normal mt-1", !date && "text-muted-foreground")}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {date ? format(date, "PPP") : "Select a date"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0">
-            <Calendar
-              mode="single"
-              selected={date}
-              onSelect={setDate}
-              initialFocus
-              disabled={(date) => date < new Date()}
-            />
-          </PopoverContent>
-        </Popover>
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Book Tickets</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="date">Select Date</Label>
+          <Input id="date" type="date" value={date} onChange={handleDateChange} min={getTomorrowDate()} />
+        </div>
 
-      <div className="space-y-4">
-        <Label>Select Tickets</Label>
-        {museum.ticketTypes.map((ticket) => (
-          <div key={ticket.id} className="flex items-center justify-between">
+        <div className="space-y-2">
+          <Label>Opening Hours</Label>
+          <div className="flex items-center text-sm text-muted-foreground">
+            <Clock className="h-4 w-4 mr-1" />
+            <span>{museum.hours || "10:00 AM - 6:00 PM"}</span>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">{ticket.name}</p>
-              <p className="text-sm text-muted-foreground">₹{ticket.price.toFixed(2)}</p>
+              <Label>Adult Tickets</Label>
+              <div className="text-sm text-muted-foreground">Ages 13+</div>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => handleQuantityChange(ticket.id, (tickets[ticket.id] || 0) - 1)}
-                disabled={!tickets[ticket.id]}
+                className="h-8 w-8"
+                onClick={() => handleDecrement("adult")}
+                disabled={adultCount <= 1}
               >
-                -
+                <Minus className="h-4 w-4" />
               </Button>
-              <Input
-                type="number"
-                min="0"
-                value={tickets[ticket.id] || 0}
-                onChange={(e) => handleQuantityChange(ticket.id, Number.parseInt(e.target.value) || 0)}
-                className="w-16 mx-2 text-center"
-              />
+              <span className="w-8 text-center">{adultCount}</span>
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => handleQuantityChange(ticket.id, (tickets[ticket.id] || 0) + 1)}
+                className="h-8 w-8"
+                onClick={() => handleIncrement("adult")}
+                disabled={adultCount >= 10}
               >
-                +
+                <Plus className="h-4 w-4" />
               </Button>
             </div>
           </div>
-        ))}
-      </div>
 
-      <div className="pt-4 border-t">
-        <div className="flex justify-between mb-4">
-          <span className="font-medium">Total</span>
-          <span className="font-bold">₹{calculateTotal().toFixed(2)}</span>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Child Tickets</Label>
+              <div className="text-sm text-muted-foreground">Ages 5-12</div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handleDecrement("child")}
+                disabled={childCount <= 0}
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <span className="w-8 text-center">{childCount}</span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handleIncrement("child")}
+                disabled={childCount >= 10}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </div>
 
-        <Button
-          className="w-full"
-          disabled={!hasSelectedTickets || !isDateSelected || isProcessing}
-          onClick={handleProceedToCheckout}
-        >
-          {isProcessing ? "Processing..." : "Proceed to Checkout"}
-        </Button>
-      </div>
-    </div>
+        <div className="rounded-lg bg-muted p-3">
+          <div className="flex items-center justify-between text-sm">
+            <span>Adult × {adultCount}</span>
+            <span>₹{totalAdultPrice.toFixed(2)}</span>
+          </div>
+          {childCount > 0 && (
+            <div className="flex items-center justify-between text-sm mt-1">
+              <span>Child × {childCount}</span>
+              <span>₹{totalChildPrice.toFixed(2)}</span>
+            </div>
+          )}
+          <Separator className="my-2" />
+          <div className="flex items-center justify-between font-medium">
+            <span>Total</span>
+            <span>₹{totalPrice.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+          <div className="flex">
+            <Info className="h-5 w-5 text-blue-500 mr-2 shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-700">
+              <p>Free cancellation up to 24 hours before your visit.</p>
+              <p className="mt-1">Children under 5 enter free with a paying adult.</p>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+      <CardFooter>
+        <Dialog open={showPayment} onOpenChange={setShowPayment}>
+          <DialogTrigger asChild>
+            <Button className="w-full" onClick={handleBookNow}>
+              Book Now
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Complete Your Booking</DialogTitle>
+              <DialogDescription>
+                You're booking {adultCount} adult {adultCount === 1 ? "ticket" : "tickets"}
+                {childCount > 0 && ` and ${childCount} child ${childCount === 1 ? "ticket" : "tickets"}`} for{" "}
+                {museum.name} on{" "}
+                {new Date(date).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+                .
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <div className="rounded-lg bg-muted p-3 mb-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span>Adult × {adultCount}</span>
+                  <span>₹{totalAdultPrice.toFixed(2)}</span>
+                </div>
+                {childCount > 0 && (
+                  <div className="flex items-center justify-between text-sm mt-1">
+                    <span>Child × {childCount}</span>
+                    <span>₹{totalChildPrice.toFixed(2)}</span>
+                  </div>
+                )}
+                <Separator className="my-2" />
+                <div className="flex items-center justify-between font-medium">
+                  <span>Total</span>
+                  <span>₹{totalPrice.toFixed(2)}</span>
+                </div>
+              </div>
+              <RazorpayPayment
+                amount={totalPrice}
+                description={`Tickets for ${museum.name}`}
+                name="John Doe"
+                email="john.doe@example.com"
+              />
+            </div>
+            <DialogFooter className="flex flex-col sm:flex-row sm:justify-between sm:space-x-2">
+              <Button variant="outline" onClick={() => setShowPayment(false)}>
+                Cancel
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardFooter>
+    </Card>
   )
 }

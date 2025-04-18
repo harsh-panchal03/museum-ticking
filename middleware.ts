@@ -4,18 +4,14 @@ import type { NextRequest } from "next/server"
 // Define paths that require authentication
 const protectedPaths = ["/dashboard", "/profile", "/bookings"]
 
-// Define paths that require admin role
-const adminPaths = ["/admin"]
-
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Check if the path is protected
   const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path))
-  const isAdminPath = adminPaths.some((path) => pathname.startsWith(path))
 
   // If it's not a protected path, continue
-  if (!isProtectedPath && !isAdminPath) {
+  if (!isProtectedPath) {
     return NextResponse.next()
   }
 
@@ -29,9 +25,29 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // For admin paths, we would check the user role here
-  // In a real app, you would decode the JWT token and check the role
-  // For this demo, we'll just continue
+  // Check if token is expired (in a real app, you would decode and check the exp claim)
+  // For this demo, we'll just check if it's the demo token
+  try {
+    // Basic check - in a real app, you would verify the token properly
+    const tokenParts = authToken.split(".")
+    if (tokenParts.length !== 3) {
+      throw new Error("Invalid token format")
+    }
+
+    // Try to decode the payload
+    const payload = JSON.parse(atob(tokenParts[1]))
+
+    // Check expiration
+    if (payload.exp && Date.now() >= payload.exp * 1000) {
+      throw new Error("Token expired")
+    }
+  } catch (e) {
+    // Token is invalid or expired, redirect to login
+    const url = new URL("/login", request.url)
+    url.searchParams.set("callbackUrl", pathname)
+    url.searchParams.set("sessionExpired", "true")
+    return NextResponse.redirect(url)
+  }
 
   return NextResponse.next()
 }
@@ -42,6 +58,5 @@ export const config = {
     "/dashboard/:path*",
     "/profile/:path*",
     "/bookings/:path*",
-    "/admin/:path*",
   ],
 }

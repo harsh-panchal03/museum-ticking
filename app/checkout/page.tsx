@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import { getMuseum, type TicketType } from "@/lib/data"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,9 +11,17 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { format } from "date-fns"
-import { useRouter } from "next/navigation"
-import { Check, CreditCard } from "lucide-react"
+import { Check, CreditCard, AlertCircle } from "lucide-react"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { api } from "@/utils/api"
+
+// Mock Razorpay type
+declare global {
+  interface Window {
+    Razorpay: any
+  }
+}
 
 export default function CheckoutPage() {
   const searchParams = useSearchParams()
@@ -23,6 +31,7 @@ export default function CheckoutPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
   const [step, setStep] = useState(1)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
 
   const [museumData, setMuseumData] = useState<any>(null)
   const [ticketsData, setTicketsData] = useState<Record<string, number>>({})
@@ -87,15 +96,69 @@ export default function CheckoutPage() {
     setStep(2)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsProcessing(true)
+    setPaymentError(null)
 
-    // Simulate payment processing
+    try {
+      // Create a simulated order
+      const amount = calculateTotal() * 100 // Convert to paise
+      const order = await api.payments.createOrder(amount)
+
+      // Simulate Razorpay integration
+      simulateRazorpayPayment(order)
+    } catch (error) {
+      console.error("Payment error:", error)
+      setPaymentError("There was an error processing your payment. Please try again.")
+      setIsProcessing(false)
+    }
+  }
+
+  const simulateRazorpayPayment = (order: any) => {
+    // Simulate a successful payment after 2 seconds
     setTimeout(() => {
+      // Simulate payment verification
+      const paymentData = {
+        orderId: order.id,
+        paymentId: `pay_${Date.now()}`,
+        signature: "simulated_signature",
+      }
+
+      handlePaymentSuccess(paymentData)
+    }, 2000)
+  }
+
+  const handlePaymentSuccess = async (paymentData: any) => {
+    try {
+      // Verify payment
+      await api.payments.verifyPayment(paymentData)
+
+      // Create booking
+      const bookingData = {
+        museumId: museumData.id,
+        date: visitDate ? format(visitDate, "yyyy-MM-dd") : "",
+        tickets: ticketsData,
+        customer: {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+        },
+        payment: paymentData,
+        amount: calculateTotal(),
+      }
+
+      await api.bookings.create(bookingData)
+
+      // Show success
       setIsProcessing(false)
       setIsComplete(true)
-    }, 2000)
+    } catch (error) {
+      console.error("Payment verification error:", error)
+      setPaymentError("There was an error verifying your payment. Please contact support.")
+      setIsProcessing(false)
+    }
   }
 
   if (isLoading) {
@@ -175,6 +238,14 @@ export default function CheckoutPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="md:col-span-2">
+            {paymentError && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Payment Error</AlertTitle>
+                <AlertDescription>{paymentError}</AlertDescription>
+              </Alert>
+            )}
+
             <Accordion type="single" collapsible defaultValue={step === 1 ? "personal" : "payment"}>
               <AccordionItem value="personal">
                 <AccordionTrigger className="text-lg font-semibold">1. Personal Information</AccordionTrigger>
@@ -295,6 +366,14 @@ export default function CheckoutPage() {
                         onChange={handleChange}
                       />
                     </div>
+
+                    <Alert className="mt-4">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Demo Mode</AlertTitle>
+                      <AlertDescription>
+                        This is a demo payment. No real payment will be processed. Any card details will work.
+                      </AlertDescription>
+                    </Alert>
 
                     <Button type="submit" className="w-full mt-4" disabled={isProcessing}>
                       {isProcessing ? "Processing Payment..." : `Pay ₹${calculateTotal().toFixed(2)}`}

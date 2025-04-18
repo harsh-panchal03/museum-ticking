@@ -9,7 +9,7 @@ interface GalleryViewerProps {
   images: string[]
 }
 
-export default function GalleryViewer({ images }: GalleryViewerProps) {
+export function GalleryViewer({ images }: GalleryViewerProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
 
   const goToPrevious = () => {

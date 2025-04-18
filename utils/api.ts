@@ -1,95 +1,177 @@
-// Function to get the authentication token
-export function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null
-
-  return localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
-}
+// API utility functions
 
 // Base API URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.example.com"
+const API_BASE_URL = "/api"
 
-// Generic fetch function with authentication
-export async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = getAuthToken()
-
-  const headers = {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
-  }
-
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  })
-
+// Helper function to handle API responses
+async function handleResponse(response: Response) {
   if (!response.ok) {
-    // Handle different error status codes
-    if (response.status === 401) {
-      // Unauthorized - clear token and redirect to login
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("auth_token")
-        sessionStorage.removeItem("auth_token")
-        window.location.href = "/login"
-      }
-    }
-
-    // Try to parse error message from response
-    let errorMessage: string
-    try {
-      const errorData = await response.json()
-      errorMessage = errorData.message || `Error: ${response.status}`
-    } catch {
-      errorMessage = `Error: ${response.status}`
-    }
-
-    throw new Error(errorMessage)
+    const error = await response.text()
+    throw new Error(error || `Error ${response.status}: ${response.statusText}`)
   }
-
   return response.json()
 }
 
-// API functions for different endpoints
-export const api = {
-  // Auth endpoints
-  auth: {
-    login: (email: string, password: string) =>
-      fetchWithAuth<{ token: string; user: any }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      }),
+// Auth API
+// Assuming this is the structure of the api.ts file
+// Let's enhance it with better error handling and token management
 
-    register: (userData: any) =>
-      fetchWithAuth<{ token: string; user: any }>("/auth/register", {
-        method: "POST",
-        body: JSON.stringify(userData),
-      }),
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null
 
-    me: () => fetchWithAuth<{ user: any }>("/auth/me"),
+  // Try to get token from localStorage first, then sessionStorage
+  return localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
+}
+
+// Add a function to check if token is expired
+export function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]))
+    return payload.exp && Date.now() >= payload.exp * 1000
+  } catch (e) {
+    return true // If we can't parse the token, consider it expired
+  }
+}
+
+// Enhanced API client with better error handling
+const auth = {
+  login: async (email: string, password: string) => {
+    // In a real app, this would be an actual API call
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (email === "demo@example.com" && password === "password") {
+          resolve({
+            token: "demo_token",
+            user: {
+              id: "user_1",
+              name: "Demo User",
+              email: "demo@example.com",
+            },
+          })
+        } else {
+          reject(new Error("Invalid credentials"))
+        }
+      }, 1000)
+    })
   },
 
-  // Museums endpoints
-  museums: {
-    getAll: () => fetchWithAuth<any[]>("/museums"),
-
-    getById: (id: string) => fetchWithAuth<any>(`/museums/${id}`),
+  register: async (userData: any) => {
+    // In a real app, this would be an actual API call
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          token: "new_user_token",
+          user: {
+            id: "new_user_1",
+            name: userData.name,
+            email: userData.email,
+          },
+        })
+      }, 1000)
+    })
   },
 
-  // Events endpoints
-  events: {
-    getAll: () => fetchWithAuth<any[]>("/events"),
+  me: async () => {
+    // In a real app, this would validate the token with the server
+    const token = getAuthToken()
 
-    getById: (id: string) => fetchWithAuth<any>(`/events/${id}`),
+    if (!token) {
+      throw new Error("No authentication token found")
+    }
+
+    if (isTokenExpired(token)) {
+      throw new Error("Token expired")
+    }
+
+    // For demo purposes, decode the token to get user info
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]))
+      return {
+        user: {
+          id: payload.sub,
+          name: payload.name,
+          email: payload.email,
+        },
+      }
+    } catch (e) {
+      throw new Error("Invalid token")
+    }
+  },
+}
+
+// Museums API
+const museums = {
+  getAll: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/museums`)
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Failed to fetch museums:", error)
+      return null
+    }
   },
 
-  // Bookings endpoints
-  bookings: {
-    create: (bookingData: any) =>
-      fetchWithAuth<any>("/bookings", {
+  getById: async (id: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/museums/${id}`)
+      return handleResponse(response)
+    } catch (error) {
+      console.error(`Failed to fetch museum ${id}:`, error)
+      return null
+    }
+  },
+}
+
+// Events API
+const events = {
+  getAll: async (city?: string) => {
+    try {
+      const url =
+        city && city !== "all" ? `${API_BASE_URL}/events?city=${encodeURIComponent(city)}` : `${API_BASE_URL}/events`
+
+      const response = await fetch(url)
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Failed to fetch events:", error)
+      return null
+    }
+  },
+}
+
+// Bookings API
+const bookings = {
+  create: async (bookingData: any) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/bookings`, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(bookingData),
-      }),
-
-    getAll: () => fetchWithAuth<any[]>("/bookings"),
+      })
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Failed to create booking:", error)
+      return null
+    }
   },
+
+  getAll: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/bookings`)
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Failed to fetch bookings:", error)
+      return null
+    }
+  },
+}
+
+// Helper function to get auth token
+// Export all API functions
+export const api = {
+  auth,
+  museums,
+  events,
+  bookings,
 }

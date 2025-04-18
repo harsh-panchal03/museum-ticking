@@ -126,11 +126,6 @@ export default function Navbar() {
                 <DropdownMenuItem asChild>
                   <Link href="/dashboard">Dashboard</Link>
                 </DropdownMenuItem>
-                {user?.role === "admin" && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/admin/dashboard">Admin Panel</Link>
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuItem asChild>
                   <Link href="/profile">Profile</Link>
                 </DropdownMenuItem>

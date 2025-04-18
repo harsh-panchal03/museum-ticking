@@ -1,30 +1,52 @@
 "use client"
 
-import { useState, useRef } from "react"
-import type { AudioGuide } from "@/lib/data"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Play, Pause, Volume2, VolumeX } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
+import { Play, Pause, Volume2, VolumeX } from "lucide-react"
 
-interface AudioGuidePlayerProps {
-  guides: AudioGuide[]
+type AudioGuidePlayerProps = {
+  audioUrl: string
 }
 
-export default function AudioGuidePlayer({ guides }: AudioGuidePlayerProps) {
-  const [selectedGuide, setSelectedGuide] = useState<AudioGuide | null>(null)
+export function AudioGuidePlayer({ audioUrl }: AudioGuidePlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
   const [volume, setVolume] = useState(80)
-
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // In a real app, we would use actual audio files
-  // For this demo, we'll simulate audio playback
-  const handlePlayPause = () => {
-    if (!selectedGuide) return
+  useEffect(() => {
+    const audio = new Audio()
+    audio.src = audioUrl
+    audioRef.current = audio
 
+    // Set up event listeners
+    audio.addEventListener("loadedmetadata", () => {
+      setDuration(audio.duration)
+    })
+
+    audio.addEventListener("timeupdate", () => {
+      setCurrentTime(audio.currentTime)
+    })
+
+    audio.addEventListener("ended", () => {
+      setIsPlaying(false)
+      setCurrentTime(0)
+    })
+
+    // Clean up
+    return () => {
+      audio.pause()
+      audio.src = ""
+      audio.removeEventListener("loadedmetadata", () => {})
+      audio.removeEventListener("timeupdate", () => {})
+      audio.removeEventListener("ended", () => {})
+    }
+  }, [audioUrl])
+
+  const togglePlayPause = () => {
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause()
@@ -35,19 +57,7 @@ export default function AudioGuidePlayer({ guides }: AudioGuidePlayerProps) {
     }
   }
 
-  const handleSelectGuide = (guide: AudioGuide) => {
-    setSelectedGuide(guide)
-    setIsPlaying(false)
-    setProgress(0)
-
-    // In a real app, we would load the audio file here
-    if (audioRef.current) {
-      audioRef.current.src = `/audio/${guide.id}.mp3`
-      audioRef.current.load()
-    }
-  }
-
-  const handleMuteToggle = () => {
+  const toggleMute = () => {
     if (audioRef.current) {
       audioRef.current.muted = !isMuted
       setIsMuted(!isMuted)
@@ -63,98 +73,55 @@ export default function AudioGuidePlayer({ guides }: AudioGuidePlayerProps) {
   }
 
   const handleProgressChange = (value: number[]) => {
-    const newProgress = value[0]
-    setProgress(newProgress)
+    const newTime = value[0]
+    setCurrentTime(newTime)
     if (audioRef.current) {
-      audioRef.current.currentTime = (newProgress / 100) * audioRef.current.duration
+      audioRef.current.currentTime = newTime
     }
   }
 
+  // Format time in MM:SS
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60)
+    const seconds = Math.floor(time % 60)
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        {guides.map((guide) => (
-          <Card
-            key={guide.id}
-            className={cn(
-              "cursor-pointer transition-colors hover:bg-accent",
-              selectedGuide?.id === guide.id && "border-primary",
-            )}
-            onClick={() => handleSelectGuide(guide)}
-          >
-            <CardContent className="p-4 flex justify-between items-center">
-              <div>
-                <h3 className="font-medium">{guide.name}</h3>
-                <p className="text-sm text-muted-foreground">{guide.duration}</p>
-              </div>
-              {selectedGuide?.id === guide.id && (
-                <Button size="sm" variant="ghost">
-                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {selectedGuide && (
-        <div className="space-y-4 pt-4 border-t">
-          <div className="flex items-center justify-between">
-            <h3 className="font-medium">{selectedGuide.name}</h3>
-            <span className="text-sm text-muted-foreground">{selectedGuide.duration}</span>
-          </div>
-
-          <div className="space-y-2">
-            <Slider value={[progress]} min={0} max={100} step={1} onValueChange={handleProgressChange} />
-
-            <div className="flex items-center justify-between">
-              <Button variant="outline" size="icon" onClick={handlePlayPause}>
-                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              </Button>
-
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={handleMuteToggle}>
-                  {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                </Button>
-                <Slider
-                  className="w-24"
-                  value={[volume]}
-                  min={0}
-                  max={100}
-                  step={1}
-                  onValueChange={handleVolumeChange}
-                />
-              </div>
-            </div>
-          </div>
-
-          <audio
-            ref={audioRef}
-            className="hidden"
-            onTimeUpdate={() => {
-              if (audioRef.current) {
-                setProgress((audioRef.current.currentTime / audioRef.current.duration) * 100)
-              }
-            }}
-            onEnded={() => {
-              setIsPlaying(false)
-              setProgress(0)
-            }}
-          />
-
-          <div className="text-sm text-muted-foreground">
-            <p>
-              This is a simulated audio guide. In a real application, this would play actual audio content providing
-              information about the museum exhibits and artwork.
+    <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" size="icon" onClick={togglePlayPause}>
+            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+          <div>
+            <p className="text-sm font-medium">Audio Guide Sample</p>
+            <p className="text-xs text-muted-foreground">
+              {formatTime(currentTime)} / {formatTime(duration || 0)}
             </p>
           </div>
         </div>
-      )}
+        <div className="flex items-center space-x-2">
+          <Button variant="ghost" size="icon" onClick={toggleMute}>
+            {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </Button>
+          <Slider value={[volume]} min={0} max={100} step={1} onValueChange={handleVolumeChange} className="w-24" />
+        </div>
+      </div>
+
+      <Slider
+        value={[currentTime]}
+        min={0}
+        max={duration || 100}
+        step={0.1}
+        onValueChange={handleProgressChange}
+        className="w-full"
+      />
+
+      <p className="text-sm text-muted-foreground">
+        Note: This is a simulated audio guide. In a real application, this would play actual audio content providing
+        information about the museum exhibits and artwork.
+      </p>
     </div>
   )
-}
-
-// Helper function from lib/utils.ts
-const cn = (...classes: any[]) => {
-  return classes.filter(Boolean).join(" ")
 }

@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import Navbar from "@/components/navbar"
 import Footer from "@/components/footer"
 import { AuthProvider } from "@/contexts/auth-context"
+import { SessionTimeout } from "@/components/session-timeout"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -26,6 +27,7 @@ export default function RootLayout({
           <AuthProvider>
             <div className="flex flex-col min-h-screen">
               <Navbar />
+              <SessionTimeout />
               <main className="flex-1">{children}</main>
               <Footer />
             </div>
@@ -35,6 +37,3 @@ export default function RootLayout({
     </html>
   )
 }
-
-
-import './globals.css'
